@@ -1,0 +1,10 @@
+Package: waterfall
+Version: 0.1
+Depends:
+Provides:
+Source: package/waterfall
+Section: net
+Priority: optional
+Maintainer: Tim Wilkinson (KN6PLV)
+Architecture: all
+Description: Waterfall
