@@ -1,3 +1,6 @@
 #!/bin/sh
 
+chmod +x /www/cgi-bin/waterfall
+chmod +x /www/cgi-bin/waterfall-update
+
 exit 0
