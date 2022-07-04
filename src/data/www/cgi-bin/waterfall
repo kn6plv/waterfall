@@ -1,0 +1,167 @@
+#!/usr/bin/lua
+--[[
+
+	Part of AREDN -- Used for creating Amateur Radio Emergency Data Networks
+	Copyright (C) 2022 Tim Wilkinson
+	See Contributors file for additional contributors
+
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation version 3 of the License.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+	Additional Terms:
+
+	Additional use restrictions exist on the AREDN(TM) trademark and logo.
+		See AREDNLicense.txt for more info.
+
+	Attributions to the AREDN Project must be retained in the source code.
+	If importing this code into a new or existing project attribution
+	to the AREDN project must be added to the source code.
+
+	You must not misrepresent the origin of the material contained within.
+
+	Modified versions must be modified to attribute to the original source
+	and be marked in reasonable ways as differentiate it from the original
+	version
+
+--]]
+
+require("aredn.http")
+require("aredn.hardware")
+local html = require("aredn.html")
+local aredn_info = require("aredn.info")
+
+http_header()
+html.header("WiFi scanner", true)
+html.print([[<body><center style="font-family: Arial"><h1>WiFi Scanner</h1>]])
+
+local wifiiface = aredn.hardware.get_iface_name("wifi")
+local rfband = aredn.hardware.get_rfband()
+local nf = iwinfo.nl80211.noise(wifiiface) or -95
+local bw
+for line in io.lines("/etc/config.mesh/_setup")
+do
+    bw = line:match("^wifi_chanbw%s=%s(%d+)")
+    if bw then
+        break
+    end
+end
+bw = tonumber(bw) or 10
+
+local nr_subsamples = 56
+local start_freq
+local end_freq
+if rfband == "900" then
+    nr_samples = 5 * nr_subsamples
+elseif rfband == "2400" then
+    nr_samples = 20 * nr_subsamples
+elseif rfband == "3400" then
+    nr_samples = 27 * nr_subsamples
+else
+    start_freq = 5655
+    end_freq = 5920
+    html.print("<script>freq2chan = (f) => (f - 5000) / 5;</script>");
+end
+local min_sig = -125
+local cnf = nf - 17.5 -- sub-carrier noise floor
+if bw == 10 then
+    cnf = cnf - 3
+elseif bw == 5 then
+    cnf = cnf - 6
+end
+
+start_freq = start_freq - bw / 2
+end_freq = end_freq + bw / 2
+local nr_samples = (end_freq - start_freq) / bw * nr_subsamples
+local cwidth = 800
+local cheight = 400
+local yscale = 5
+local sample_width = math.floor(cwidth / nr_samples * 10) / 10;
+-- Adjust width as we can't have very fine sample bars
+cwidth = sample_width * nr_samples
+
+html.print([[<style>
+.s {
+    display: inline-block;
+    width: ]] .. sample_width .. [[px;
+    height: 30px;
+    background-color: yellow;
+    border-top: 0px solid purple;
+    border-bottom: 30px solid red;
+    box-sizing: border-box;
+    transition: height 1s, border-top-width 1s, border-bottom-width 1s;
+}
+</style>
+<div style="padding:8px">Spectral View</div>
+<div style="position:relative;display:inline-block"><div style="position:absolute;left:-430px;top:200px;transform:rotate(-90deg)">SNR</div></div>
+<div style="position:relative;width:]] .. cwidth .. [[px;height:]] .. cheight .. [[px;border:1px solid grey;background-color:black;text-align:left;overflow:hidden;">]])
+html.write([[<div id="spectral" style="position:absolute;bottom:0;width:100%;">]])
+for _ = 1,nr_samples
+do
+    html.write([[<div class="s"></div>]])
+end
+html.print([[</div>
+<canvas id="overlay" style="position:absolute;" width="]] .. cwidth .. [[" height="]] .. cheight .. [["></canvas>
+</div>
+<div style="padding:4px">Channel</div>
+</center>
+<script>
+    const spec = document.getElementById("spectral")
+    const bars = spec.children;
+    function sample() {
+        const req = new XMLHttpRequest();
+        req.open("GET", "waterfall-update");
+        req.addEventListener("load", () => {
+            const scan = req.responseText;
+            for (let i = 0; i < scan.length - 1; i += 3) {
+                const h = scan.charCodeAt(i) - 32;
+                const m = scan.charCodeAt(i + 1) - 32;
+                const l = scan.charCodeAt(i + 2) - 32;
+                const s = bars[i / 3].style;
+                s.height = (h * ]] .. yscale .. [[) + "px";
+                s.borderTopWidth = ((h - m) * ]] .. yscale .. [[) + "px";
+                s.borderBottomWidth = (l * ]] .. yscale .. [[) + "px";
+            }
+            sample();
+        });
+        req.send();
+    }
+    sample();
+    const overlay = document.getElementById("overlay");
+    const ctx = overlay.getContext("2d");
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.fillStyle = "white";
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+    ctx.beginPath()
+    for (let f = ]] .. start_freq .. [[; f <= ]] .. end_freq .. [[; f += 5) {
+        const chan = freq2chan(f);
+        if (chan % 2 === 0) {
+            const x = Math.floor((f - ]] .. start_freq .. [[) * ]] .. (cwidth / (end_freq - start_freq)) .. [[);
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, ]] .. (cheight - 20) .. [[);
+            ctx.fillText("" + chan, x, ]] .. (cheight - 4) .. [[);
+        }
+    }
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath();
+    for (let snr = 60; snr >= 0; snr -= 10) {
+        const y = ]] .. cheight .. [[ - (snr + ]] .. (cnf - min_sig) .. [[) * ]] .. yscale .. [[;
+        ctx.moveTo(20, y);
+        ctx.lineTo(]] .. cwidth .. [[, y);
+        ctx.fillText("" + snr, 2, y);
+    }
+    ctx.stroke();
+</script>
+</center></body></html>]])
+http_footer()

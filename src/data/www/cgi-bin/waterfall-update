@@ -1,0 +1,168 @@
+#!/usr/bin/lua
+--[[
+
+	Part of AREDN -- Used for creating Amateur Radio Emergency Data Networks
+	Copyright (C) 2022 Tim Wilkinson
+	See Contributors file for additional contributors
+
+	This program is free software: you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation version 3 of the License.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+	Additional Terms:
+
+	Additional use restrictions exist on the AREDN(TM) trademark and logo.
+		See AREDNLicense.txt for more info.
+
+	Attributions to the AREDN Project must be retained in the source code.
+	If importing this code into a new or existing project attribution
+	to the AREDN project must be added to the source code.
+
+	You must not misrepresent the origin of the material contained within.
+
+	Modified versions must be modified to attribute to the original source
+	and be marked in reasonable ways as differentiate it from the original
+	version
+
+--]]
+
+require("nixio")
+require("iwinfo")
+require("aredn.hardware")
+
+local wifiiface = aredn.hardware.get_iface_name("wifi")
+local phy = iwinfo.nl80211.phyname(wifiiface)
+local rfband = aredn.hardware.get_rfband()
+local bw
+for line in io.lines("/etc/config.mesh/_setup")
+do
+    bw = line:match("^wifi_chanbw%s=%s(%d+)")
+    if bw then
+        break
+    end
+end
+bw = tonumber(bw) or 10
+
+local start_freq
+local end_freq
+if rfband == "900" then
+    start_freq = 902
+    end_freq = 925
+elseif rfband == "2400" then
+    start_freq = 2377
+    end_freq = 2477
+elseif rfband == "3400" then
+    -- transverted
+    start_freq = 5370
+    end_freq = 5505
+else
+    start_freq = 5655
+    end_freq = 5920
+end
+local nr_subsamples = 56
+local nr_samples = (end_freq - start_freq + bw) / bw * nr_subsamples
+local min_sig = -125
+local max_sig = min_sig + 90
+local dev = "/sys/kernel/debug/ieee80211/" .. phy .. "/ath9k"
+
+function u8tos8(b)
+    return b >= 128 and b - 256 or b
+end
+
+function update_samples(samples)
+    local i = 1
+    local buckets = {}
+    while i < #samples
+    do
+        local t = samples:byte(i)
+        local l = samples:byte(i + 1) * 256 + samples:byte(i + 2)
+        if t == 1 then
+            local max_exp = samples:byte(i + 3)
+            local freq = samples:byte(i + 4) * 256 + samples:byte(i + 5)
+            if freq >= start_freq and freq <= end_freq then
+                local rssi = u8tos8(samples:byte(i + 6))
+                local noise = u8tos8(samples:byte(i + 7))
+                local datasqsum = 0
+                local v = {}
+                for dptr = 1,nr_subsamples
+                do
+                    local data = nixio.bit.lshift(samples:byte(dptr + i + 19), max_exp)
+                    data = data * data
+                    datasqsum = datasqsum + data
+                    v[dptr] = data
+                end
+                for dptr = 1,nr_subsamples
+                do
+                    local datasq = v[dptr]
+                    if datasq ~= 0 then
+                        local sig = noise + rssi + 10 * math.log10(datasq / datasqsum)
+                        if sig >= min_sig and sig <= max_sig then
+                            local bidx = math.floor((freq - start_freq) / bw * nr_subsamples + dptr)
+                            if not buckets[bidx] then
+                                buckets[bidx] = { sig }
+                            else
+                                table.insert(buckets[bidx], sig)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        i = i + 3 + l
+    end
+
+    for i = 1,nr_samples
+    do
+        if buckets[i] then
+            table.sort(buckets[i])
+        end
+    end
+
+    local r = ""
+    for i = 1,nr_samples
+    do
+        local bucket = buckets[i]
+        if bucket then
+            r = r .. string.char(math.floor(32 + bucket[#bucket] - min_sig)) .. 
+                     string.char(math.floor(32 + bucket[math.floor(#bucket * 0.90)] - min_sig)) ..
+                     string.char(math.floor(32 + bucket[math.floor(#bucket * 0.50)] - min_sig))
+        else
+            r = r .. "   "
+        end
+    end
+    return r
+end
+
+function run()
+    os.execute("echo '32' > " .. dev .. "/spectral_count")
+    os.execute("echo 'chanscan' > " .. dev .. "/spectral_scan_ctl")
+    os.execute("iw " .. wifiiface .. " scan passive > /dev/null 2>&1")
+    local f = io.open(dev .. "/spectral_scan0", "rb")
+    local samples = f:read("*a")
+    f:close()
+    print(update_samples(samples))
+    io.flush()
+end
+
+-- Wrap this in a child process so we can tidy up when the client closes
+-- and not leave the spectral scanner running
+local pid = nixio.fork()
+if pid == -1 then
+    os.exit(-1)
+elseif pid == 0 then
+    nixio.setsid()
+    print("Content-type: application/json\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n")
+    io.flush()
+    pcall(run)
+    os.execute("echo 'disable' > " .. dev .. "/spectral_scan_ctl")
+else
+    nixio.waitpid(pid)
+end
