@@ -39,10 +39,6 @@ require("aredn.hardware")
 local html = require("aredn.html")
 local aredn_info = require("aredn.info")
 
-http_header()
-html.header("WiFi scanner", true)
-html.print([[<body><center style="font-family: Arial"><h1>WiFi Scanner</h1>]])
-
 local wifiiface = aredn.hardware.get_iface_name("wifi")
 local rfband = aredn.hardware.get_rfband()
 local nf = iwinfo.nl80211.noise(wifiiface) or -95
@@ -59,6 +55,7 @@ bw = tonumber(bw) or 10
 local nr_subsamples = 56
 local start_freq
 local end_freq
+local freq2chan = ""
 if rfband == "900" then
     nr_samples = 5 * nr_subsamples
 elseif rfband == "2400" then
@@ -68,7 +65,7 @@ elseif rfband == "3400" then
 else
     start_freq = 5655
     end_freq = 5920
-    html.print("<script>freq2chan = (f) => (f - 5000) / 5;</script>");
+    freq2chan="freq2chan = (f) => (f - 5000) / 5;"
 end
 local min_sig = -125
 local cnf = nf - 17.5 -- sub-carrier noise floor
@@ -83,27 +80,56 @@ end_freq = end_freq + bw / 2
 local nr_samples = (end_freq - start_freq) / bw * nr_subsamples
 local cwidth = 800
 local cheight = 400
+local wheight = 200
+local bheight = 5
 local yscale = 5
 local sample_width = math.floor(cwidth / nr_samples * 10) / 10;
 -- Adjust width as we can't have very fine sample bars
 cwidth = sample_width * nr_samples
 
-html.print([[<style>
+http_header()
+html.header("WiFi scanner", true)
+html.print([[<body><style>
+.lds-dual-ring {
+    display: inline-block;
+    width: 60px;
+    height: 34px;
+}
+.lds-dual-ring:after {
+    content: " ";
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin: 8px;
+    border-radius: 50%;
+    border: 6px solid black;
+    border-color: #bd1e2d transparent #bd1e2d transparent;
+    animation: lds-dual-ring 3s linear infinite;
+}
+@keyframes lds-dual-ring {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}  
 .s {
     display: inline-block;
     width: ]] .. sample_width .. [[px;
-    height: 30px;
+    height: 0px;
     background-color: yellow;
     border-top: 0px solid purple;
-    border-bottom: 30px solid red;
+    border-bottom: 0px solid red;
     box-sizing: border-box;
     transition: height 1s, border-top-width 1s, border-bottom-width 1s;
 }
 </style>
+<center style="font-family: Arial"><h1>WiFi Scanner<div class="lds-dual-ring"></div></h1>
 <div style="padding:8px">Spectral View</div>
 <div style="position:relative;display:inline-block"><div style="position:absolute;left:-430px;top:200px;transform:rotate(-90deg)">SNR</div></div>
-<div style="position:relative;width:]] .. cwidth .. [[px;height:]] .. cheight .. [[px;border:1px solid grey;background-color:black;text-align:left;overflow:hidden;">]])
-html.write([[<div id="spectral" style="position:absolute;bottom:0;width:100%;">]])
+<div style="position:relative;width:]] .. cwidth .. [[px;height:]] .. cheight .. [[px;border:1px solid grey;background-color:black;text-align:left;overflow:hidden;">
+<div id="spectral" style="position:absolute;bottom:0;width:100%;">]])
 for _ = 1,nr_samples
 do
     html.write([[<div class="s"></div>]])
@@ -112,23 +138,38 @@ html.print([[</div>
 <canvas id="overlay" style="position:absolute;" width="]] .. cwidth .. [[" height="]] .. cheight .. [["></canvas>
 </div>
 <div style="padding:4px">Channel</div>
+<div id="waterfall" style="width:]] .. cwidth .. [[px;height:]] .. wheight .. [[px;border:1px solid grey;background-color:black;"></div>
+<div style="padding:4px">Waterfall</div>
 </center>
 <script>
+    ]] .. freq2chan .. [[
     const spec = document.getElementById("spectral")
     const bars = spec.children;
+    const waterfall = document.getElementById("waterfall");
     function sample() {
         const req = new XMLHttpRequest();
         req.open("GET", "waterfall-update");
         req.addEventListener("load", () => {
+            const bar = document.createElement("canvas");
+            bar.width = ]] .. cwidth .. [[;
+            bar.height = ]] .. bheight .. [[;
+            const ctx = bar.getContext("2d");
             const scan = req.responseText;
             for (let i = 0; i < scan.length - 1; i += 3) {
                 const h = scan.charCodeAt(i) - 32;
                 const m = scan.charCodeAt(i + 1) - 32;
                 const l = scan.charCodeAt(i + 2) - 32;
-                const s = bars[i / 3].style;
+                const idx = i / 3;
+                const s = bars[idx].style;
                 s.height = (h * ]] .. yscale .. [[) + "px";
                 s.borderTopWidth = ((h - m) * ]] .. yscale .. [[) + "px";
                 s.borderBottomWidth = (l * ]] .. yscale .. [[) + "px";
+                ctx.fillStyle = "hsl(240, 100%, " + Math.min(100, m * m / 15) + "%)";
+                ctx.fillRect(idx * ]] .. sample_width .. [[, 0, ]] .. math.max(1, sample_width) .. [[, ]] .. bheight .. [[);
+            }
+            waterfall.insertBefore(bar, waterfall.firstChild);
+            if (waterfall.children.length * ]] .. bheight .. [[ > ]] .. wheight .. [[) {
+                waterfall.removeChild(waterfall.lastChild);
             }
             sample();
         });
