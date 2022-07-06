@@ -1,3 +1,6 @@
 #!/bin/sh
 
+sed -i -e '/\/cgi-bin\/waterfall:root:\$p\$root/d' /etc/httpd.conf
+sed -i -e '/\/cgi-bin\/waterfall-update:root:\$p\$root/d' /etc/httpd.conf
+
 exit 0

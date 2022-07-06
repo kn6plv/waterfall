@@ -3,4 +3,12 @@
 chmod +x /www/cgi-bin/waterfall
 chmod +x /www/cgi-bin/waterfall-update
 
+sed -i -e '/\/cgi-bin\/waterfall:root:\$p\$root/d' /etc/httpd.conf
+sed -i -e '/\/cgi-bin\/waterfall-update:root:\$p\$root/d' /etc/httpd.conf
+
+echo "/cgi-bin/waterfall:root:\$p\$root" >> /etc/httpd.conf
+echo "/cgi-bin/waterfall-update:root:\$p\$root" >> /etc/httpd.conf
+
+echo "Please reboot node to update waterfall page permissions!!"
+
 exit 0
