@@ -78,14 +78,12 @@ end
 start_freq = start_freq - bw / 2
 end_freq = end_freq + bw / 2
 local nr_samples = (end_freq - start_freq) / bw * nr_subsamples
-local cwidth = 800
 local cheight = 400
 local wheight = 200
 local bheight = 5
 local yscale = 5
-local sample_width = math.floor(cwidth / nr_samples * 10) / 10;
--- Adjust width as we can't have very fine sample bars
-cwidth = sample_width * nr_samples
+local sample_width = 0.5;
+local cwidth = sample_width * nr_samples
 
 http_header()
 html.header("WiFi scanner", true)
