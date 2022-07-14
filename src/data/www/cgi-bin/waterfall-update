@@ -132,8 +132,8 @@ function update_samples(samples)
         local bucket = buckets[i]
         if bucket then
             r = r .. string.char(math.floor(32 + bucket[#bucket] - min_sig)) .. 
-                     string.char(math.floor(32 + bucket[math.floor(#bucket * 0.95)] - min_sig)) ..
-                     string.char(math.floor(32 + bucket[math.floor(#bucket * 0.50)] - min_sig))
+                     string.char(math.floor(32 + bucket[1 + math.floor(#bucket * 0.95)] - min_sig)) ..
+                     string.char(math.floor(32 + bucket[1 + math.floor(#bucket * 0.50)] - min_sig))
         else
             r = r .. "   "
         end
