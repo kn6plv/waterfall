@@ -56,12 +56,22 @@ local nr_subsamples = 56
 local start_freq
 local end_freq
 local freq2chan = ""
+local sample_width = 0.5;
 if rfband == "900" then
-    nr_samples = 5 * nr_subsamples
+    sample_width = 2
+    start_freq = 902
+    end_freq = 925
+    freq2chan="freq2chan = (f) => (f - 887) / 5;"
 elseif rfband == "2400" then
-    nr_samples = 20 * nr_subsamples
+    sample_width = 1.5
+    start_freq = 2387
+    end_freq = 2472
+    freq2chan="freq2chan = (f) => (f - 2407) / 5;"
 elseif rfband == "3400" then
-    nr_samples = 27 * nr_subsamples
+    -- transverted
+    start_freq = 5370
+    end_freq = 5505
+    freq2chan="freq2chan = (f) => (f - 5000) / 5;"
 else
     start_freq = 5655
     end_freq = 5920
@@ -82,7 +92,6 @@ local cheight = 400
 local wheight = 200
 local bheight = 5
 local yscale = 5
-local sample_width = 0.5;
 local cwidth = sample_width * nr_samples
 
 http_header()
