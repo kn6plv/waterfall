@@ -62,7 +62,7 @@ elseif rfband == "2400" then
 elseif rfband == "3400" then
     -- transverted
     start_freq = 5370
-    end_freq = 5505
+    end_freq = 5500
 else
     start_freq = 5655
     end_freq = 5920

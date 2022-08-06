@@ -70,7 +70,7 @@ elseif rfband == "2400" then
 elseif rfband == "3400" then
     -- transverted
     start_freq = 5370
-    end_freq = 5505
+    end_freq = 5500
     freq2chan="freq2chan = (f) => (f - 5000) / 5;"
 else
     start_freq = 5655
@@ -158,10 +158,10 @@ end
 html.print([[</div>
 <canvas id="overlay" style="position:absolute;" width="]] .. cwidth .. [[" height="]] .. cheight .. [["></canvas>
 <div class="k">
-<div><span style="background-color:purple">&nbsp;&nbsp;&nbsp;</span> 5% of traffic</div>                                                                         
-<div><span style="background-color:yellow">&nbsp;&nbsp;&nbsp;</span> 95% of traffic</div>                                                                              
-<div><span style="background-color:red">&nbsp;&nbsp;&nbsp;</span> Ambient noise</div>               
-</div>   
+<div><span style="background-color:purple">&nbsp;&nbsp;&nbsp;</span> 100% traffic</div>
+<div><span style="background-color:yellow">&nbsp;&nbsp;&nbsp;</span> 95% traffic</div>
+<div><span style="background-color:red">&nbsp;&nbsp;&nbsp;</span> 50% traffic</div>
+</div>
 </div>
 <div style="padding:4px">Channel</div>
 <div id="waterfall" style="width:]] .. cwidth .. [[px;height:]] .. wheight .. [[px;border:1px solid grey;background-color:black;"></div>
