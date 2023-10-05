@@ -40,7 +40,7 @@ require("aredn.hardware")
 
 local wifiiface = aredn.hardware.get_iface_name("wifi")
 local phy = iwinfo.nl80211.phyname(wifiiface)
-local rfband = aredn.hardware.get_rfband()
+local basefreq = aredn.hardware.get_rfchannels(wifiiface)[1].frequency
 local bw
 for line in io.lines("/etc/config.mesh/_setup")
 do
@@ -53,13 +53,13 @@ bw = tonumber(bw) or 10
 
 local start_freq
 local end_freq
-if rfband == "900" then
+if basefreq > 900 and basefreq < 2300 then
     start_freq = 902
     end_freq = 925
-elseif rfband == "2400" then
+elseif basefreq > 2300 and basefreq < 3000 then
     start_freq = 2387
     end_freq = 2472
-elseif rfband == "3400" then
+elseif basefreq > 3000 and basefreq < 5100 then
     -- transverted
     start_freq = 5370
     end_freq = 5500
