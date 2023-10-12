@@ -42,6 +42,7 @@ local aredn_info = require("aredn.info")
 local wifiiface = aredn.hardware.get_iface_name("wifi")
 local basefreq = aredn.hardware.get_rfchannels(wifiiface)[1].frequency
 local nf = iwinfo.nl80211.noise(wifiiface) or -95
+local phy = iwinfo.nl80211.phyname(wifiiface)
 local bw
 for line in io.lines("/etc/config.mesh/_setup")
 do
@@ -59,22 +60,22 @@ local freq2chan = ""
 local sample_width = 0.5;
 if basefreq > 900 and basefreq < 2300 then
     sample_width = 2
-    start_freq = 902
-    end_freq = 925
+    start_freq = 902 - bw / 2
+    end_freq = 925 + bw / 2
     freq2chan="freq2chan = (f) => (f - 887) / 5;"
 elseif basefreq > 2300 and basefreq < 3000 then
     sample_width = 1.5
-    start_freq = 2387
-    end_freq = 2472
+    start_freq = 2387 - bw / 2
+    end_freq = 2472 + bw / 2
     freq2chan="freq2chan = (f) => (f - 2407) / 5;"
 elseif basefreq > 3000 and basefreq < 5100 then
     -- transverted
-    start_freq = 5370
-    end_freq = 5500
+    start_freq = 5370 - bw / 2
+    end_freq = 5500 + bw / 2
     freq2chan="freq2chan = (f) => (f - 5000) / 5;"
 else
-    start_freq = 5655
-    end_freq = 5920
+    start_freq = 5655 - bw / 2
+    end_freq = 5920 + bw / 2
     freq2chan="freq2chan = (f) => (f - 5000) / 5;"
 end
 local min_sig = -125
@@ -85,8 +86,12 @@ elseif bw == 5 then
     cnf = cnf - 6
 end
 
-start_freq = start_freq - bw / 2
-end_freq = end_freq + bw / 2
+if nixio.fs.stat("/sys/kernel/debug/ieee80211/" .. phy .. "/ath9k") then
+    water_scale = 50
+else
+    water_scale = 15
+end
+
 local nr_samples = (end_freq - start_freq) / bw * nr_subsamples
 local cheight = 400
 local wheight = 200
@@ -190,7 +195,8 @@ html.print([[</div>
                 s.height = (h * ]] .. yscale .. [[) + "px";
                 s.borderTopWidth = ((h - m) * ]] .. yscale .. [[) + "px";
                 s.borderBottomWidth = (l * ]] .. yscale .. [[) + "px";
-                ctx.fillStyle = "hsl(240, 100%, " + Math.min(100, m * m / 15) + "%)";
+                const v = (m + h) * (m + h) / ]] .. water_scale .. [[;
+                ctx.fillStyle = "hsl(240, 100%, " + Math.min(100, v) + "%)";
                 ctx.fillRect(idx * ]] .. sample_width .. [[, 0, ]] .. math.max(1, sample_width) .. [[, ]] .. bheight .. [[);
             }
             waterfall.insertBefore(bar, waterfall.firstChild);

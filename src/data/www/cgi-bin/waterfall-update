@@ -40,7 +40,8 @@ require("aredn.hardware")
 
 local wifiiface = aredn.hardware.get_iface_name("wifi")
 local phy = iwinfo.nl80211.phyname(wifiiface)
-local basefreq = aredn.hardware.get_rfchannels(wifiiface)[1].frequency
+local channels = aredn.hardware.get_rfchannels(wifiiface)
+local basefreq = channels[1].frequency
 local bw
 for line in io.lines("/etc/config.mesh/_setup")
 do
@@ -54,30 +55,45 @@ bw = tonumber(bw) or 10
 local start_freq
 local end_freq
 if basefreq > 900 and basefreq < 2300 then
-    start_freq = 902
-    end_freq = 925
+    start_freq = 902 - bw / 2
+    end_freq = 925 + bw / 2
 elseif basefreq > 2300 and basefreq < 3000 then
-    start_freq = 2387
-    end_freq = 2472
+    start_freq = 2387 - bw / 2
+    end_freq = 2472 + bw / 2
 elseif basefreq > 3000 and basefreq < 5100 then
     -- transverted
-    start_freq = 5370
-    end_freq = 5500
+    start_freq = 5370 - bw / 2
+    end_freq = 5500 + bw / 2
 else
-    start_freq = 5655
-    end_freq = 5920
+    start_freq = 5655 - bw / 2
+    end_freq = 5920 + bw / 2
 end
 local nr_subsamples = 56
-local nr_samples = (end_freq - start_freq + bw) / bw * nr_subsamples
+local buckets_per_freq = nr_subsamples / bw
+local nr_buckets = math.floor((end_freq - start_freq) * buckets_per_freq)
 local min_sig = -125
 local max_sig = min_sig + 90
-local dev = "/sys/kernel/debug/ieee80211/" .. phy .. "/ath9k"
+
+local scan_list = "freq"
+for _, channel in ipairs(channels)
+do
+    local f = channel.frequency
+    if f >= start_freq and f <= end_freq then
+        scan_list = scan_list .. " " .. f
+    end
+end
 
 function u8tos8(b)
     return b >= 128 and b - 256 or b
 end
 
-function update_samples(samples)
+function u16tos16(v)
+    return v >= 32768 and v - 65536 or v
+end
+
+local process_samples
+
+function process_samples_ath9k(samples)
     local i = 1
     local buckets = {}
     while i < #samples
@@ -87,7 +103,7 @@ function update_samples(samples)
         if t == 1 then
             local max_exp = samples:byte(i + 3)
             local freq = samples:byte(i + 4) * 256 + samples:byte(i + 5)
-            if freq >= start_freq and freq <= end_freq then
+            if freq >= start_freq and freq < end_freq then
                 local rssi = u8tos8(samples:byte(i + 6))
                 local noise = u8tos8(samples:byte(i + 7))
                 local datasqsum = 0
@@ -118,8 +134,74 @@ function update_samples(samples)
         end
         i = i + 3 + l
     end
+    return buckets
+end
 
-    for i = 1,nr_samples
+function process_samples_ath10k(samples)
+    local buckets = {}
+
+    local i = 1
+    while i < #samples
+    do
+        local bins = samples:byte(i + 1) * 256 + samples:byte(i + 2) - 29
+        local chan_width_mhz = samples:byte(i + 3)
+        local freq1 = samples:byte(i + 4) * 256 + samples:byte(i + 5)
+        local noise = u16tos16(samples:byte(i + 8) * 256 + samples:byte(i + 9))
+        local rssi = u8tos8(samples:byte(i + 25))
+        local max_exp = samples:byte(i + 28)
+
+        --print(bins, chan_width_mhz, freq1, noise, max_exp, rssi, start_freq, end_freq)
+
+        local doffset = i + 29
+        if freq1 >= start_freq and freq1 < end_freq then
+            local datasqsum = 0
+            local dptr
+            for dptr = 0, bins-1
+            do
+                local data = nixio.bit.lshift(samples:byte(doffset + dptr), max_exp)
+                datasqsum = datasqsum + data * data
+            end
+
+            local signal_offset = noise + rssi - 10 * math.log10(datasqsum)
+            local freq_offset = freq1 - start_freq - bw / 2
+
+            for dptr = 0, bins-1
+            do
+                local data = nixio.bit.lshift(samples:byte(doffset + dptr), max_exp)
+                local sig = signal_offset + 20 * math.log10(data)
+                if sig >= min_sig and sig <= max_sig then
+                    local freq = freq_offset + (dptr / bins) * chan_width_mhz
+                    local bidx = math.floor(freq * buckets_per_freq)
+                    if not buckets[bidx] then
+                        buckets[bidx] = { sig }
+                    else
+                        table.insert(buckets[bidx], sig)
+                    end
+                end
+            end
+        end
+        i = doffset + bins + 3
+    end
+
+    return buckets
+end
+
+local trigger_cmd
+local dev = "/sys/kernel/debug/ieee80211/" .. phy .. "/ath9k"
+if nixio.fs.stat(dev) then
+    process_samples = process_samples_ath9k
+    trigger_cmds = { "chanscan" }
+else
+    dev = "/sys/kernel/debug/ieee80211/" .. phy .. "/ath10k"
+    process_samples = process_samples_ath10k
+    trigger_cmds = { "background", "trigger" }
+end
+
+function update_samples(samples)
+    local buckets = process_samples(samples)
+
+    local i
+    for i = 1,nr_buckets
     do
         if buckets[i] then
             table.sort(buckets[i])
@@ -127,7 +209,7 @@ function update_samples(samples)
     end
 
     local r = ""
-    for i = 1,nr_samples
+    for i = 1,nr_buckets
     do
         local bucket = buckets[i]
         if bucket then
@@ -143,10 +225,14 @@ end
 
 function run()
     os.execute("echo '32' > " .. dev .. "/spectral_count")
-    os.execute("echo 'chanscan' > " .. dev .. "/spectral_scan_ctl")
-    os.execute("iw " .. wifiiface .. " scan passive > /dev/null 2>&1")
+    for i = 1, #trigger_cmds
+    do
+        os.execute("echo '" .. trigger_cmds[i] .. "' > " .. dev .. "/spectral_scan_ctl")
+    end
+    os.execute("iw " .. wifiiface .. " scan " .. scan_list .. " passive > /dev/null 2>&1")
+    os.execute("echo 'disable' > " .. dev .. "/spectral_scan_ctl")
     local f = io.open(dev .. "/spectral_scan0", "rb")
-    local samples = f:read("*a")
+    local samples = f:read("*ab")
     f:close()
     print(update_samples(samples))
     io.flush()
