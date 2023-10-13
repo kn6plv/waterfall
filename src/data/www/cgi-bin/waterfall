@@ -2,7 +2,7 @@
 --[[
 
 	Part of AREDN -- Used for creating Amateur Radio Emergency Data Networks
-	Copyright (C) 2022 Tim Wilkinson
+	Copyright (C) 2022-3 Tim Wilkinson
 	See Contributors file for additional contributors
 
 	This program is free software: you can redistribute it and/or modify
@@ -34,50 +34,17 @@
 
 --]]
 
+package.path = package.path .. ";/www/cgi-bin/?.lua"  
+
 require("aredn.http")
-require("aredn.hardware")
 local html = require("aredn.html")
-local aredn_info = require("aredn.info")
+require("waterfall-lib")
 
-local wifiiface = aredn.hardware.get_iface_name("wifi")
-local basefreq = aredn.hardware.get_rfchannels(wifiiface)[1].frequency
-local nf = iwinfo.nl80211.noise(wifiiface) or -95
-local phy = iwinfo.nl80211.phyname(wifiiface)
-local bw
-for line in io.lines("/etc/config.mesh/_setup")
-do
-    bw = line:match("^wifi_chanbw%s=%s(%d+)")
-    if bw then
-        break
-    end
-end
-bw = tonumber(bw) or 10
+local cwidth = 800
+local cheight = 400
+local wheight = 200
+local sample_width = cwidth / nr_buckets
 
-local nr_subsamples = 56
-local start_freq
-local end_freq
-local freq2chan = ""
-local sample_width = 0.5;
-if basefreq > 900 and basefreq < 2300 then
-    sample_width = 2
-    start_freq = 902 - bw / 2
-    end_freq = 925 + bw / 2
-    freq2chan="freq2chan = (f) => (f - 887) / 5;"
-elseif basefreq > 2300 and basefreq < 3000 then
-    sample_width = 1.5
-    start_freq = 2387 - bw / 2
-    end_freq = 2472 + bw / 2
-    freq2chan="freq2chan = (f) => (f - 2407) / 5;"
-elseif basefreq > 3000 and basefreq < 5100 then
-    -- transverted
-    start_freq = 5370 - bw / 2
-    end_freq = 5500 + bw / 2
-    freq2chan="freq2chan = (f) => (f - 5000) / 5;"
-else
-    start_freq = 5655 - bw / 2
-    end_freq = 5920 + bw / 2
-    freq2chan="freq2chan = (f) => (f - 5000) / 5;"
-end
 local min_sig = -125
 local cnf = nf - 17.5 -- sub-carrier noise floor
 if bw == 10 then
@@ -92,12 +59,8 @@ else
     water_scale = 15
 end
 
-local nr_samples = (end_freq - start_freq) / bw * nr_subsamples
-local cheight = 400
-local wheight = 200
 local bheight = 5
 local yscale = 5
-local cwidth = sample_width * nr_samples
 
 http_header()
 html.header("WiFi scanner", true)
@@ -156,7 +119,7 @@ html.print([[<body><style>
 <div style="position:relative;display:inline-block"><div style="position:absolute;left:-430px;top:200px;transform:rotate(-90deg)">SNR</div></div>
 <div style="position:relative;width:]] .. cwidth .. [[px;height:]] .. cheight .. [[px;border:1px solid grey;background-color:black;text-align:left;overflow:hidden;">
 <div id="spectral" style="position:absolute;bottom:0;width:100%;">]])
-for _ = 1,nr_samples
+for _ = 1,nr_buckets
 do
     html.write([[<div class="s"></div>]])
 end

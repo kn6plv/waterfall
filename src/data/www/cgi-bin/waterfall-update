@@ -2,7 +2,7 @@
 --[[
 
 	Part of AREDN -- Used for creating Amateur Radio Emergency Data Networks
-	Copyright (C) 2022 Tim Wilkinson
+	Copyright (C) 2022-3 Tim Wilkinson
 	See Contributors file for additional contributors
 
 	This program is free software: you can redistribute it and/or modify
@@ -34,51 +34,20 @@
 
 --]]
 
+package.path = package.path .. ";/www/cgi-bin/?.lua"  
+
 require("nixio")
-require("iwinfo")
-require("aredn.hardware")
+require("waterfall-lib")
 
-local wifiiface = aredn.hardware.get_iface_name("wifi")
-local phy = iwinfo.nl80211.phyname(wifiiface)
-local channels = aredn.hardware.get_rfchannels(wifiiface)
-local basefreq = channels[1].frequency
-local bw
-for line in io.lines("/etc/config.mesh/_setup")
-do
-    bw = line:match("^wifi_chanbw%s=%s(%d+)")
-    if bw then
-        break
-    end
-end
-bw = tonumber(bw) or 10
-
-local start_freq
-local end_freq
-if basefreq > 900 and basefreq < 2300 then
-    start_freq = 902 - bw / 2
-    end_freq = 925 + bw / 2
-elseif basefreq > 2300 and basefreq < 3000 then
-    start_freq = 2387 - bw / 2
-    end_freq = 2472 + bw / 2
-elseif basefreq > 3000 and basefreq < 5100 then
-    -- transverted
-    start_freq = 5370 - bw / 2
-    end_freq = 5500 + bw / 2
-else
-    start_freq = 5655 - bw / 2
-    end_freq = 5920 + bw / 2
-end
-local nr_subsamples = 56
-local buckets_per_freq = nr_subsamples / bw
-local nr_buckets = math.floor((end_freq - start_freq) * buckets_per_freq)
 local min_sig = -125
 local max_sig = min_sig + 90
 
-local scan_list = "freq"
-for _, channel in ipairs(channels)
+local scan_list = ""
+local step = bw / 10
+for i, channel in ipairs(channels)
 do
     local f = channel.frequency
-    if f >= start_freq and f <= end_freq then
+    if f >= start_freq and f <= end_freq and (i == 1 or i == #channels or i % step == 0) then
         scan_list = scan_list .. " " .. f
     end
 end
@@ -229,7 +198,7 @@ function run()
     do
         os.execute("echo '" .. trigger_cmds[i] .. "' > " .. dev .. "/spectral_scan_ctl")
     end
-    os.execute("iw " .. wifiiface .. " scan " .. scan_list .. " passive > /dev/null 2>&1")
+    os.execute("iw " .. wifiiface .. " scan freq" .. scan_list .. " passive > /dev/null 2>&1")
     os.execute("echo 'disable' > " .. dev .. "/spectral_scan_ctl")
     local f = io.open(dev .. "/spectral_scan0", "rb")
     local samples = f:read("*ab")
