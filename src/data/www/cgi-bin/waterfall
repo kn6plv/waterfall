@@ -38,6 +38,7 @@ package.path = package.path .. ";/www/cgi-bin/?.lua"
 
 require("aredn.http")
 local html = require("aredn.html")
+local info = require("aredn.info")
 require("waterfall-lib")
 
 local cwidth = 800
@@ -62,8 +63,13 @@ end
 local bheight = 5
 local yscale = 5
 
+local node = info.get_nvram("node")
+if node == "" then
+    node = "NOCALL"
+end
+
 http_header()
-html.header("WiFi scanner", true)
+html.header(node .. ": WiFi scanner", true)
 html.print([[<body><style>
 .lds-dual-ring {
     display: inline-block;
@@ -114,7 +120,11 @@ html.print([[<body><style>
     line-height: 16px;
 }
 </style>
-<center style="font-family: Arial"><h1>WiFi Scanner<div class="lds-dual-ring"></div></h1>
+<center style="font-family: Arial">
+<h1 style="margin: 6px 0px">]] .. node .. [[</h1>
+<div style="font-size:28px">WiFi Scanner<div class="lds-dual-ring"></div></div>
+<div><input style="margin:10px" type="button" value="Refresh" onclick="window.location.reload();">
+<input type="button" value="Quit" onclick="window.location='status';"></div>
 <div style="padding:8px">Spectral View</div>
 <div style="position:relative;display:inline-block"><div style="position:absolute;left:-430px;top:200px;transform:rotate(-90deg)">SNR</div></div>
 <div style="position:relative;width:]] .. cwidth .. [[px;height:]] .. cheight .. [[px;border:1px solid grey;background-color:black;text-align:left;overflow:hidden;">
