@@ -120,6 +120,7 @@ html.print([[<body><style>
     line-height: 16px;
 }
 </style>
+<div style="position: absolute;top:0;right:0;padding:10px;font-size:9px">Version ]] .. VERSION .. [[</div>
 <center style="font-family: Arial">
 <h1 style="margin: 6px 0px">]] .. node .. [[</h1>
 <div style="font-size:28px">WiFi Scanner<div class="lds-dual-ring"></div></div>

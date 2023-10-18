@@ -9,9 +9,10 @@ find . -name '*~' -delete
 # Main
 rm -rf data.tar.gz control.tar.gz
 cd src/data
+sed -i "s/^VERSION=\".*\"$/VERSION=\"${VERSION}\"/" www/cgi-bin/waterfall-lib.lua
 tar cf ../../data.tar `find . -type f | grep -v DS_Store | grep -v .pl | grep -v .pm`
 cd ../control
-sed -i "s/^Version: .*$/Version: ${VERSION}/" control 
+sed -i "s/^Version: .*$/Version: ${VERSION}/" control
 tar cfz ../../control.tar.gz .
 cd ../..
 gzip data.tar
