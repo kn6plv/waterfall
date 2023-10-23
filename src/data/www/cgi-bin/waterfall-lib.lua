@@ -37,7 +37,7 @@
 require("iwinfo")
 require("aredn.hardware")
 
-VERSION="0.5.3"
+VERSION="0.5.4"
 
 wifiiface = aredn.hardware.get_iface_name("wifi")
 phy = iwinfo.nl80211.phyname(wifiiface)
